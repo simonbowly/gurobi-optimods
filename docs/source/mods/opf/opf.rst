@@ -192,7 +192,7 @@ argument when calling the function. Currently, the available options are ``AC``,
   The ACOPF problem is formulated as a nonconvex bilinear model as described in
   the :ref:`ACOPF <acopf-label>` section of the :doc:`opf_specification`. This
   setting yields the most accurate model of the physical power system. However,
-  it is also the most difficult problem to solve and thus usually leads to the
+  it is also the most difficult problem to solve and thus usually leads to
   longer runtimes.
 
 - The ``ACrelax`` setting solves a Second Order Cone (SOC) relaxation of the
