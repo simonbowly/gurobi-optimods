@@ -335,85 +335,93 @@ def max_flow_min_cut(theme, theme_name):
 
 
 def metromap(theme, theme_name):
-    """Schematic metro map with octilinear lines."""
+    """Schematic metro map with octilinear lines using the metromap mod."""
     fig, ax = create_figure(theme)
 
-    # Stations
-    stations = [
-        [2, 5],
-        [4, 5],
-        [6, 5],
-        [8, 5],  # Horizontal line
-        [4, 3],
-        [6, 3],
-        [8, 3],  # Lower horizontal
-        [4, 7],
-        [6, 7],
-        [8, 7],  # Upper horizontal
-        [6, 8],
-        [7, 9],  # Diagonal extension
+    from gurobi_optimods import datasets
+    from gurobi_optimods.metromap import metromap as metromap_solver
+
+    # Load the reduced Berlin metro network
+    graph_full, linepath_data_full = datasets.load_berlin_metro_reduced_graph_data()
+
+    # Select only 2 lines to keep the problem small
+    selected_lines = ["U1", "U2"]
+    linepath_data = linepath_data_full[
+        linepath_data_full["linename"].isin(selected_lines)
     ]
-    stations = np.array(stations)
 
-    # Lines (octilinear - horizontal, vertical, diagonal)
-    # Line 1: horizontal
-    line1_x = [2, 4, 6, 8]
-    line1_y = [5, 5, 5, 5]
-    ax.plot(
-        line1_x,
-        line1_y,
-        color=theme["accent1"],
-        linewidth=theme["line_width"] + 1,
-        solid_capstyle="round",
-        zorder=1,
+    # Get nodes used by these lines
+    used_nodes = set(
+        linepath_data["edge_source"].tolist() + linepath_data["edge_target"].tolist()
     )
 
-    # Line 2: lower horizontal + vertical
-    ax.plot(
-        [4, 6, 8],
-        [3, 3, 3],
-        color=theme["accent2"],
-        linewidth=theme["line_width"] + 1,
-        solid_capstyle="round",
-        zorder=1,
-    )
-    ax.plot(
-        [6, 6],
-        [3, 5],
-        color=theme["accent2"],
-        linewidth=theme["line_width"] + 1,
-        solid_capstyle="round",
-        zorder=1,
+    # Create subgraph with only these nodes
+    graph = graph_full.subgraph(used_nodes).copy()
+
+    # Compute metromap
+    graph_out, edge_directions = metromap_solver(
+        graph,
+        linepath_data,
+        penalty_line_bends=1,
+        penalty_distance=1,
+        penalty_edge_directions=1,
     )
 
-    # Line 3: upper horizontal + diagonal
-    ax.plot(
-        [4, 6],
-        [7, 7],
-        color=theme["accent3"],
-        linewidth=theme["line_width"] + 1,
-        solid_capstyle="round",
-        zorder=1,
-    )
-    ax.plot(
-        [6, 7],
-        [8, 9],
-        color=theme["accent3"],
-        linewidth=theme["line_width"] + 1,
-        solid_capstyle="round",
-        zorder=1,
-    )
+    # Get the octilinear positions
+    pos_oct = nx.get_node_attributes(graph_out, "pos_oct")
 
-    # Stations as white circles with border
-    ax.scatter(
-        stations[:, 0],
-        stations[:, 1],
-        s=150,
-        color=theme["bg"],
-        edgecolor=theme["fg"],
-        linewidth=2,
-        zorder=2,
-    )
+    # Scale positions to fit canvas
+    if pos_oct:
+        pos_array = np.array(list(pos_oct.values()))
+        min_vals = pos_array.min(axis=0)
+        max_vals = pos_array.max(axis=0)
+
+        for node in pos_oct:
+            x, y = pos_oct[node]
+            pos_oct[node] = [
+                1.5 + 7.0 * (x - min_vals[0]) / (max_vals[0] - min_vals[0]),
+                1.5 + 7.0 * (y - min_vals[1]) / (max_vals[1] - min_vals[1]),
+            ]
+
+    # Define line colors for light and dark themes
+    if theme_name == "light":
+        line_colors = {
+            "U1": "#3498db",  # blue
+            "U2": "#e74c3c",  # red
+        }
+    else:  # dark theme
+        line_colors = {
+            "U1": "#5dade2",  # lighter blue
+            "U2": "#ec7063",  # lighter red
+        }
+
+    # Draw edges grouped by line
+    for line in selected_lines:
+        line_edges = linepath_data[linepath_data["linename"] == line]
+        for _, row in line_edges.iterrows():
+            src, tgt = row["edge_source"], row["edge_target"]
+            if src in pos_oct and tgt in pos_oct:
+                ax.plot(
+                    [pos_oct[src][0], pos_oct[tgt][0]],
+                    [pos_oct[src][1], pos_oct[tgt][1]],
+                    color=line_colors[line],
+                    linewidth=theme["line_width"] + 1.5,
+                    solid_capstyle="round",
+                    zorder=1,
+                    alpha=0.9,
+                )
+
+    # Draw stations
+    for node in pos_oct:
+        ax.scatter(
+            pos_oct[node][0],
+            pos_oct[node][1],
+            s=150,
+            color="white" if theme["bg"] == "none" else theme["bg"],
+            edgecolor=theme["fg"],
+            linewidth=1.5,
+            zorder=2,
+        )
 
     save_figure(fig, "metromap", theme_name)
 
