@@ -8,7 +8,13 @@ from pathlib import Path
 
 import matplotlib.patches as mpatches
 import matplotlib.pyplot as plt
+import networkx as nx
 import numpy as np
+
+from gurobi_optimods.mwis import (
+    maximum_weighted_clique,
+    maximum_weighted_independent_set,
+)
 
 # Output directory
 ICON_DIR = Path("docs/source/mods/icons")
@@ -497,64 +503,153 @@ def min_cost_flow(theme, theme_name):
 
 
 def mwis(theme, theme_name):
-    """Graph with maximum weighted independent set."""
+    """Graph with maximum weighted independent set solved using optimods."""
     fig, ax = create_figure(theme)
 
-    # Create a graph (cube-like)
-    nodes = np.array([[2, 2], [4, 2], [2, 5], [4, 5], [6, 3], [8, 3], [6, 6], [8, 6]])
+    # Create a clean planar graph where all nodes form clear angles
+    # Using a grid-based structure with diagonal connections
+    G = nx.Graph()
 
-    # Edges
+    # Add nodes with random weights
+    np.random.seed(42)
+    num_nodes = 12
+    weights = np.random.uniform(0.5, 2.0, num_nodes)
+    G.add_nodes_from(range(num_nodes))
+
+    # Create edges - a 3x4 grid with some diagonals for interesting angles
+    # Layout:  0---1---2---3
+    #          |\ /|\ /|\ /|
+    #          | X | X | X |
+    #          |/ \|/ \|/ \|
+    #          4---5---6---7
+    #              |\ /|
+    #              | X |
+    #              |/ \|
+    #          8---9--10--11
     edges = [
+        # Top row horizontal
         (0, 1),
-        (0, 2),
-        (1, 3),
-        (2, 3),  # Left square
+        (1, 2),
+        (2, 3),
+        # Middle row horizontal
         (4, 5),
-        (4, 6),
-        (5, 7),
-        (6, 7),  # Right square
-        (1, 4),
-        (3, 6),
+        (5, 6),
+        (6, 7),
+        # Bottom row horizontal
+        (8, 9),
+        (9, 10),
+        (10, 11),
+        # Vertical connections
+        (0, 4),
         (1, 5),
-        (3, 7),  # Connections
+        (2, 6),
+        (3, 7),
+        (5, 9),
+        (6, 10),
+        # Diagonal connections for angles
+        (1, 4),
+        (2, 5),
+        (1, 6),
+        (2, 7),
+        (5, 10),
+        (6, 9),
     ]
+    G.add_edges_from(edges)
+
+    # Verify the graph is planar
+    assert nx.is_planar(G), "Graph should be planar"
+
+    # Solve MWIS using the actual optimod
+    result_mwis = maximum_weighted_independent_set(G, weights)
+    independent_set = set(result_mwis.x)
+
+    # Solve max clique using the actual optimod
+    result_clique = maximum_weighted_clique(G, weights)
+    clique_set = set(result_clique.x)
+
+    # Find nodes in both sets
+    both_sets = independent_set & clique_set
+
+    # Use manual grid layout for perfect alignment
+    pos = {
+        0: [0, 2],
+        1: [1, 2],
+        2: [2, 2],
+        3: [3, 2],
+        4: [0, 1],
+        5: [1, 1],
+        6: [2, 1],
+        7: [3, 1],
+        8: [0, 0],
+        9: [1, 0],
+        10: [2, 0],
+        11: [3, 0],
+    }
+
+    # Scale positions to fit and center in canvas (0-10 range)
+    for node in pos:
+        x, y = pos[node]
+        # Scale from 0-3 grid to 1.5-8.5 canvas range
+        pos[node] = [1.5 + x * 7.0 / 3.0, 1.5 + y * 7.0 / 2.0]
 
     # Draw all edges
-    for i, j in edges:
+    for i, j in G.edges():
         ax.plot(
-            [nodes[i, 0], nodes[j, 0]],
-            [nodes[i, 1], nodes[j, 1]],
+            [pos[i][0], pos[j][0]],
+            [pos[i][1], pos[j][1]],
             color=theme["fg"],
             alpha=0.3,
             linewidth=2,
             zorder=1,
         )
 
-    # Independent set
-    independent_set = [0, 3, 5, 6]
-
-    # Draw all nodes
-    for i in range(len(nodes)):
-        if i in independent_set:
+    # Draw all nodes with uniform size
+    node_size = 250
+    for i in range(num_nodes):
+        if i in both_sets:
+            # Nodes in both sets - purple
             ax.scatter(
-                nodes[i, 0],
-                nodes[i, 1],
-                s=400,
-                color=theme["accent1"],
+                pos[i][0],
+                pos[i][1],
+                s=node_size,
+                color=theme["accent3"],  # purple
                 edgecolor=theme["fg"],
-                linewidth=2.5,
+                linewidth=1.5,
+                zorder=3,
+            )
+        elif i in independent_set:
+            # Nodes only in independent set - blue
+            ax.scatter(
+                pos[i][0],
+                pos[i][1],
+                s=node_size,
+                color=theme["accent1"],  # blue
+                edgecolor=theme["fg"],
+                linewidth=1.5,
+                zorder=3,
+            )
+        elif i in clique_set:
+            # Nodes only in clique - red
+            ax.scatter(
+                pos[i][0],
+                pos[i][1],
+                s=node_size,
+                color=theme["accent4"],  # red
+                edgecolor=theme["fg"],
+                linewidth=1.5,
                 zorder=3,
             )
         else:
+            # Other nodes - dimmed
             ax.scatter(
-                nodes[i, 0],
-                nodes[i, 1],
-                s=300,
-                color=theme["bg"],
+                pos[i][0],
+                pos[i][1],
+                s=node_size,
+                color=theme["bg"] if theme["bg"] != "none" else theme["fg"],
                 edgecolor=theme["fg"],
-                linewidth=2,
+                linewidth=1.5,
                 zorder=2,
-                alpha=0.5,
+                alpha=0.4,
             )
 
     save_figure(fig, "mwis", theme_name)
