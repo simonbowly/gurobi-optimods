@@ -100,4 +100,5 @@ jobs:
       - test-wheel-examples
       - doc-tests
       - doc-build
-    secrets: inherit
+    permissions:
+      id-token: write
